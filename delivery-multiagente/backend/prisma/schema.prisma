@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CLIENTE
+  ADMIN
+  COCINA
+  REPARTIDOR
+}
+
+enum OrderStatus {
+  CONSULTA
+  SELECCION_PRODUCTOS
+  COTIZACION
+  PAGO_PENDIENTE
+  PAGO_ENVIADO
+  PAGO_VALIDADO
+  PAGO_RECHAZADO
+  EN_COCINA
+  LISTO_PARA_REPARTO
+  EN_REPARTO
+  ENTREGADO
+  CERRADO
+  CANCELADO
+}
+
+enum PaymentStatus {
+  PENDIENTE
+  ENVIADO
+  EN_VERIFICACION
+  VALIDADO
+  RECHAZADO
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String?  @unique
+  password_hash String?
+  phone         String?  @unique
+  role          Role     @default(CLIENTE)
+  created_at    DateTime @default(now())
+  orders        Order[]
+
+  @@map("users")
+}
+
+model Product {
+  id           String      @id @default(cuid())
+  name         String
+  category     String
+  description  String?
+  price        Float
+  is_available Boolean     @default(true)
+  image_url    String?
+  created_at   DateTime    @default(now())
+  order_items  OrderItem[]
+
+  @@map("products")
+}
+
+model Driver {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String   @unique
+  is_available Boolean  @default(true)
+  created_at   DateTime @default(now())
+  orders       Order[]
+
+  @@map("drivers")
+}
+
+model Order {
+  id                 String        @id @default(cuid())
+  user_id            String?
+  user               User?         @relation(fields: [user_id], references: [id])
+  customer_name      String
+  customer_phone     String
+  delivery_address   String
+  delivery_reference String?
+  subtotal           Float         @default(0)
+  delivery_fee       Float         @default(5)
+  total              Float         @default(0)
+  status             OrderStatus   @default(CONSULTA)
+  payment_proof_url  String?
+  assigned_driver_id String?
+  driver             Driver?       @relation(fields: [assigned_driver_id], references: [id])
+  created_at         DateTime      @default(now())
+  updated_at         DateTime      @updatedAt
+  items              OrderItem[]
+  payments           Payment[]
+  notifications      Notification[]
+  survey             Survey?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(cuid())
+  order_id   String
+  order      Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product_id String
+  product    Product @relation(fields: [product_id], references: [id])
+  quantity   Int
+  unit_price Float
+  subtotal   Float
+
+  @@map("order_items")
+}
+
+model Payment {
+  id                       String        @id @default(cuid())
+  order_id                 String
+  order                    Order         @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  method                   String        @default("YAPE")
+  amount                   Float
+  proof_url                String?
+  status                   PaymentStatus @default(PENDIENTE)
+  admin_notes              String?
+  detected_amount          Float?
+  detected_method          String?
+  detected_receiver_number String?
+  validation_confidence    Float?
+  rejection_reason         String?
+  validated_automatically  Boolean       @default(false)
+  validated_at             DateTime?
+  created_at               DateTime      @default(now())
+  updated_at               DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model Notification {
+  id       String   @id @default(cuid())
+  order_id String
+  order    Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  message  String
+  channel  String   @default("chatbot")
+  sent_at  DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model Survey {
+  id         String   @id @default(cuid())
+  order_id   String   @unique
+  order      Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  rating     Int?
+  comment    String?
+  created_at DateTime @default(now())
+
+  @@map("surveys")
+}
