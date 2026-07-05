@@ -1,0 +1,15 @@
+{
+    "permissions": {
+        "defaultMode": "acceptEdits",
+        "allow": [
+            "Bash",
+            "PowerShell"
+        ],
+        "deny": [
+            "Bash(rm -rf *)",
+            "Bash(git push *)",
+            "Bash(git reset --hard *)",
+            "PowerShell(Remove-Item -Recurse *)"
+        ]
+    }
+}

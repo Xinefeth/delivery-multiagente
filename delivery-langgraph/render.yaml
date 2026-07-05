@@ -1,0 +1,80 @@
+# ============================================================
+#  Blueprint de Render — El Trujillano Delivery (PASO 7)
+#  Monolito modular FastAPI + PostgreSQL con pgvector.
+#  Despliega con:  Render Dashboard -> New -> Blueprint (apunta a este repo).
+# ============================================================
+
+databases:
+  - name: el-trujillano-db
+    databaseName: el_trujillano
+    plan: free
+    # Render soporta pgvector; habilítalo una vez con:  CREATE EXTENSION vector;
+    # (ver scripts/enable_pgvector.sql y las instrucciones del README).
+    postgresMajorVersion: "16"
+
+services:
+  # ---------------- API (Web Service Python) ----------------
+  - type: web
+    name: el-trujillano-api
+    runtime: python
+    plan: free
+    rootDir: delivery-langgraph
+    buildCommand: "pip install -r requirements.txt"
+    # Aplica el esquema, siembra catálogo/usuarios y arranca uvicorn (ver script).
+    startCommand: "bash scripts/start_render.sh"
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Conexión a la BD gestionada de Render (se inyecta automáticamente).
+      - key: DATABASE_URL
+        fromDatabase:
+          name: el-trujillano-db
+          property: connectionString
+
+      # API de Claude (Anthropic) — se define manualmente en el dashboard.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-haiku-4-5-20251001
+
+      # Embeddings (Voyage por defecto; cambia a huggingface si no quieres API).
+      - key: EMBEDDINGS_PROVIDER
+        value: voyage
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: VOYAGE_MODEL
+        value: voyage-3
+
+      # Checkpointer de LangGraph sobre la MISMA PostgreSQL (memoria por sesión).
+      - key: LANGGRAPH_CHECKPOINTER
+        value: postgres
+
+      # Observabilidad LangSmith.
+      - key: LANGSMITH_TRACING
+        value: "true"
+      - key: LANGSMITH_API_KEY
+        sync: false
+      - key: LANGSMITH_PROJECT
+        value: el-trujillano-delivery
+      - key: LANGSMITH_ENDPOINT
+        value: https://api.smith.langchain.com
+
+      # Seguridad del panel (JWT). Render genera un secreto aleatorio.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE_HOURS
+        value: "8"
+
+      # Reglas de negocio.
+      - key: NUMERO_YAPE_RESTAURANTE
+        value: "938749977"
+      - key: NOMBRE_TITULAR_PAGO
+        value: "Restaurante El Trujillano"
+      - key: MAX_ITERACIONES_RECLAMO
+        value: "3"
+
+      # Runtime.
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: RUN_INGEST_ON_START
+        value: "true"

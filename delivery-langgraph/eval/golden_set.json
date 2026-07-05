@@ -1,0 +1,86 @@
+{
+  "descripcion": "Golden set de evaluación (PASO 8). Casos con respuesta esperada para las tres capacidades del sistema: clasificación de intención (agente LLM), validación de comprobante (lógica determinista sobre datos ya extraídos) y resolución de reclamos (Deep Agent).",
+  "intenciones": [
+    { "id": "int-01", "mensaje": "hola buenas, ¿están atendiendo?", "esperado": "GREETING" },
+    { "id": "int-02", "mensaje": "¿me muestras la carta completa?", "esperado": "SHOW_MENU" },
+    { "id": "int-03", "mensaje": "quiero ver solo las bebidas", "esperado": "SHOW_CATEGORY" },
+    { "id": "int-04", "mensaje": "agrégame un lomo saltado y una chicha morada", "esperado": "ADD_PRODUCT" },
+    { "id": "int-05", "mensaje": "quítame la inca kola del pedido", "esperado": "REMOVE_PRODUCT" },
+    { "id": "int-06", "mensaje": "no, mejor sin el ceviche", "esperado": "REMOVE_PRODUCT_BY_NEGATION" },
+    { "id": "int-07", "mensaje": "¿qué tengo en mi carrito hasta ahora?", "esperado": "VIEW_CART" },
+    { "id": "int-08", "mensaje": "ya está, confirmo mi pedido", "esperado": "CONFIRM_ORDER" },
+    { "id": "int-09", "mensaje": "así nomás está bien, nada más", "esperado": "REJECT_ADDITION" },
+    { "id": "int-10", "mensaje": "voy a pagar con Yape", "esperado": "SELECT_PAYMENT_YAPE" },
+    { "id": "int-11", "mensaje": "prefiero pagar por Plin", "esperado": "SELECT_PAYMENT_PLIN" },
+    { "id": "int-12", "mensaje": "¿en cuánto llega mi pedido?", "esperado": "CHECK_ORDER_STATUS" },
+    { "id": "int-13", "mensaje": "quiero cancelar mi pedido por favor", "esperado": "CANCEL_ORDER" },
+    { "id": "int-14", "mensaje": "¿cuál es la capital de Francia?", "esperado": "OUT_OF_SCOPE" }
+  ],
+  "comprobantes": [
+    {
+      "id": "pay-01",
+      "descripcion": "Comprobante Yape correcto, número enmascarado, monto exacto.",
+      "pedido_total": 55.0,
+      "comprobante": { "monto": 55.0, "metodo": "Yape", "numero_destinatario": "*** *** 977", "nombre_destinatario": "Restaurante El Trujillano", "es_comprobante_valido": true },
+      "esperado_validado": true
+    },
+    {
+      "id": "pay-02",
+      "descripcion": "Monto dentro de la tolerancia (+S/0.05).",
+      "pedido_total": 55.0,
+      "comprobante": { "monto": 55.05, "metodo": "Yape", "numero_destinatario": "977", "nombre_destinatario": "El Trujillano SAC", "es_comprobante_valido": true },
+      "esperado_validado": true
+    },
+    {
+      "id": "pay-03",
+      "descripcion": "Monto no coincide (pagó de menos).",
+      "pedido_total": 55.0,
+      "comprobante": { "monto": 50.0, "metodo": "Yape", "numero_destinatario": "*** *** 977", "nombre_destinatario": "Restaurante El Trujillano", "es_comprobante_valido": true },
+      "esperado_validado": false
+    },
+    {
+      "id": "pay-04",
+      "descripcion": "Número de destino incorrecto.",
+      "pedido_total": 30.0,
+      "comprobante": { "monto": 30.0, "metodo": "Plin", "numero_destinatario": "*** *** 123", "nombre_destinatario": "Restaurante El Trujillano", "es_comprobante_valido": true },
+      "esperado_validado": false
+    },
+    {
+      "id": "pay-05",
+      "descripcion": "Titular no coincide.",
+      "pedido_total": 30.0,
+      "comprobante": { "monto": 30.0, "metodo": "Yape", "numero_destinatario": "*** *** 977", "nombre_destinatario": "Otra Persona Cualquiera", "es_comprobante_valido": true },
+      "esperado_validado": false
+    },
+    {
+      "id": "pay-06",
+      "descripcion": "La imagen no es un comprobante Yape/Plin.",
+      "pedido_total": 22.0,
+      "comprobante": { "monto": null, "metodo": null, "numero_destinatario": null, "nombre_destinatario": null, "es_comprobante_valido": false },
+      "esperado_validado": false
+    }
+  ],
+  "reclamos": [
+    {
+      "id": "rec-01",
+      "descripcion": "Demora cubierta por política -> se espera resolución sin escalar.",
+      "reclamo": "Mi pedido llegó frío y con más de 40 minutos de retraso sobre lo prometido.",
+      "esperado_escalado": false,
+      "tema": "demoras"
+    },
+    {
+      "id": "rec-02",
+      "descripcion": "Producto errado cubierto por política -> resolución sin escalar.",
+      "reclamo": "Pedí pollo a la brasa pero me llegó trucha frita, está totalmente equivocado.",
+      "esperado_escalado": false,
+      "tema": "pedido_errado"
+    },
+    {
+      "id": "rec-03",
+      "descripcion": "Pretensión fuera de política -> se espera escalamiento a humano.",
+      "reclamo": "Exijo la devolución del triple de lo que pagué porque el sabor no me gustó, aunque me comí todo.",
+      "esperado_escalado": true,
+      "tema": "reembolso_no_cubierto"
+    }
+  ]
+}

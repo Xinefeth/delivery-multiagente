@@ -1,0 +1,49 @@
+# --- Núcleo LangChain / LangGraph ---
+langgraph>=0.2.50
+langgraph-checkpoint-postgres>=2.0.0   # PostgresSaver (memoria de corto plazo en prod)
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+
+# --- Modelo de chat y visión: API de Claude (Anthropic) ---
+langchain-anthropic>=0.3.0
+
+# --- Embeddings (Claude NO ofrece embeddings; se usa Voyage AI o HuggingFace) ---
+langchain-voyageai>=0.1.3
+langchain-huggingface>=0.1.0
+sentence-transformers>=3.0.0     # backend local para HuggingFaceEmbeddings
+
+# --- Vector store sobre PostgreSQL + pgvector ---
+langchain-postgres>=0.0.12
+pgvector>=0.3.0
+psycopg[binary]>=3.2.0           # driver psycopg3 (postgresql+psycopg://)
+
+# --- ORM relacional (pedidos, repartidores, notificaciones, encuestas) ---
+SQLAlchemy>=2.0.30
+
+# --- Esquemas / salida estructurada ---
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# --- Carga del PDF de políticas para el RAG de reclamos ---
+pypdf>=4.2.0
+reportlab>=4.2.0                 # solo para generar un PDF de políticas de ejemplo
+
+# --- Capa REST ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9          # subida de imagen de comprobante
+
+# --- Autenticación del panel (login con roles) ---
+PyJWT>=2.8.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+
+# --- Observabilidad ---
+langsmith>=0.1.80
+
+# --- Utilidades ---
+python-dotenv>=1.0.1
+
+# --- Pruebas (unitarias, integración, e2e) ---
+pytest>=8.2.0
