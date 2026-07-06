@@ -41,6 +41,10 @@ class VentasState(TypedDict, total=False):
     comprobante: dict | None
     resultado_validacion: dict | None
 
+    # Reclamo en curso: mientras esté activo, las fotos y mensajes de seguimiento
+    # van al Deep Agent de reclamos (no al validador de pago).
+    reclamo_activo: bool
+
     # Salida del turno hacia el cliente
     respuesta: str
 
@@ -48,8 +52,9 @@ class VentasState(TypedDict, total=False):
 # --------------------- DEEP AGENT DE RECLAMOS (sub-grafo) ---------------------
 class ReclamoState(TypedDict, total=False):
     session_id: str
-    reclamo: str          # texto del reclamo del cliente
+    reclamo: str          # último mensaje del cliente en el reclamo
     order_id: int | None
+    contexto_conversacion: str  # turnos previos del reclamo (para que fluya)
 
     plan: dict | None     # PlanReclamo serializado
     consulta: str         # consulta de búsqueda actual

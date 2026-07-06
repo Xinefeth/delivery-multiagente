@@ -40,8 +40,13 @@ def recopilar_datos_cliente(state: VentasState) -> dict:
     paso = datos.get("pendingDataStep")
     entrada = (state.get("input_usuario") or "").strip()
 
-    # Inicio del flujo
+    # Inicio del flujo: no pedir datos si no hay nada que confirmar. Evita el
+    # dead-end de recopilar nombre/teléfono/dirección para un carrito vacío.
     if not paso:
+        if not (state.get("carrito") or []):
+            return {
+                "respuesta": "Tu carrito está vacío 🛒. Agrega algún plato del menú antes de confirmar el pedido.",
+            }
         datos["pendingDataStep"] = PASO_NAME
         return {"datos_cliente": datos, "respuesta": _PREGUNTAS[PASO_NAME]}
 

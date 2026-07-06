@@ -17,18 +17,34 @@ from el_trujillano.graphs.ventas_graph import (
     route_intencion,
     route_post_datos,
 )
+from el_trujillano.nodes.extras import responder_directo
 from el_trujillano.nodes.recopilar_datos_cliente import (
     PASO_CONFIRMING,
     PASO_DONE,
     recopilar_datos_cliente,
 )
 from el_trujillano.reclamos.nodos import route_evaluacion
+from el_trujillano.api.routers.chat import quick_replies_para
+
+_CARRITO_DEMO = [{"product_id": 1, "nombre": "Lomo saltado", "precio": 30.0, "cantidad": 1}]
 
 
 # ------------------------------- Grafo de ventas: entrada -------------------------------
 def test_route_entry_prioriza_comprobante():
-    # Si hay imagen de comprobante, va directo a validarlo (rama de pago).
+    # Si hay imagen y NO hay reclamo en curso, va directo a validarla (rama de pago).
     assert route_entry({"imagen_comprobante": "b64..."}) == "validar_comprobante"
+
+
+def test_route_entry_foto_en_reclamo_va_al_deep_agent():
+    # Una foto durante un reclamo es EVIDENCIA, no un comprobante de pago.
+    estado = {"imagen_comprobante": "b64...", "reclamo_activo": True}
+    assert route_entry(estado) == "atender_reclamo"
+
+
+def test_route_entry_foto_sin_reclamo_sigue_siendo_pago():
+    # Con la bandera apagada, la foto vuelve a interpretarse como comprobante.
+    estado = {"imagen_comprobante": "b64...", "reclamo_activo": False}
+    assert route_entry(estado) == "validar_comprobante"
 
 
 def test_route_entry_continua_recopilacion_datos():
@@ -52,6 +68,8 @@ def test_route_intencion_mapea_cada_intencion():
         "CONFIRM_ORDER": "recopilar_datos_cliente",
         "CHECK_ORDER_STATUS": "consultar_estado",
         "CANCEL_ORDER": "cancelar_pedido",
+        "FILE_COMPLAINT": "atender_reclamo",
+        "PAYMENT_MADE": "responder_directo",
         "OUT_OF_SCOPE": "responder_directo",
     }
     for intencion, destino in casos.items():
@@ -86,7 +104,8 @@ def test_route_evaluacion_escala_tras_max_iteraciones():
 
 # ------------------------------- Sub-máquina recopilar_datos_cliente (integración de pasos) -------------------------------
 def test_recopilar_datos_flujo_completo():
-    estado = {"datos_cliente": {}, "input_usuario": ""}
+    # Con carrito no vacío arranca la recopilación de datos.
+    estado = {"datos_cliente": {}, "input_usuario": "", "carrito": _CARRITO_DEMO}
 
     # Arranque -> pregunta el nombre
     out = recopilar_datos_cliente(estado)
@@ -119,6 +138,54 @@ def test_recopilar_datos_flujo_completo():
     assert out["datos_cliente"]["pendingDataStep"] == PASO_DONE
     # Y el router post-datos ya despacharía a crear_pedido:
     assert route_post_datos(out) == "crear_pedido"
+
+
+# ------------------------------- Guardas de carrito vacío (regresión de UX) -------------------------------
+def test_recopilar_datos_carrito_vacio_no_inicia():
+    # Confirmar con carrito vacío NO debe arrancar la captura de datos (dead-end).
+    out = recopilar_datos_cliente({"datos_cliente": {}, "input_usuario": "confirmo", "carrito": []})
+    assert "pendingDataStep" not in (out.get("datos_cliente") or {})
+    assert "vac" in out["respuesta"].lower()  # "vacío"
+
+
+def test_recopilar_datos_en_curso_no_lo_bloquea_el_guardado():
+    # Si ya hay un paso en curso (PHONE), el guardado de carrito vacío no aplica.
+    datos = {"pendingDataStep": "NAME", "nombre": "Ana"}
+    out = recopilar_datos_cliente({"datos_cliente": datos, "input_usuario": "Ana", "carrito": []})
+    assert out["datos_cliente"]["pendingDataStep"] == "PHONE"
+
+
+# ------------------------------- Quick replies contextuales (según estado real) -------------------------------
+def test_quick_replies_carrito_vacio_no_ofrece_acciones_de_carrito():
+    qr = quick_replies_para({"carrito": [], "intencion_actual": "GREETING"})
+    assert "Confirmar pedido" not in qr and "Ver mi carrito" not in qr
+
+
+def test_quick_replies_con_carrito_ofrece_confirmar():
+    qr = quick_replies_para({"carrito": _CARRITO_DEMO, "intencion_actual": "ADD_PRODUCT"})
+    assert "Confirmar pedido" in qr
+
+
+def test_quick_replies_durante_recopilacion_no_ofrece_atajos():
+    estado = {"carrito": _CARRITO_DEMO, "datos_cliente": {"pendingDataStep": "PHONE"}}
+    assert quick_replies_para(estado) == []
+
+
+def test_quick_replies_pedido_esperando_comprobante_sin_atajos():
+    # Con un pedido creado y esperando pago, NO se reofrece "Confirmar pedido".
+    estado = {"carrito": [], "estado_pedido": "PAGO_PENDIENTE"}
+    assert quick_replies_para(estado) == []
+
+
+# ------------------------------- "Ya pagué" (PAYMENT_MADE) -------------------------------
+def test_payment_made_con_pedido_pide_comprobante():
+    out = responder_directo({"intencion_actual": "PAYMENT_MADE", "estado_pedido": "PAGO_PENDIENTE"})
+    assert "comprobante" in out["respuesta"].lower()
+
+
+def test_payment_made_sin_pedido_avisa():
+    out = responder_directo({"intencion_actual": "PAYMENT_MADE"})
+    assert "no encuentro" in out["respuesta"].lower()
 
 
 def _run():

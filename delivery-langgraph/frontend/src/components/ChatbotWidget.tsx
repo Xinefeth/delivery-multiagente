@@ -23,8 +23,12 @@ function formatText(text: string): React.ReactNode {
   });
 }
 
-export default function ChatbotWidget() {
-  const [sessionId] = useState(() => `smart-${uuidv4()}`);
+interface ChatbotWidgetProps {
+  sessionId: string;
+  onOrderConfirmed?: (orderId: string) => void;
+}
+
+export default function ChatbotWidget({ sessionId, onOrderConfirmed }: ChatbotWidgetProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -67,13 +71,14 @@ export default function ChatbotWidget() {
       // Guardar orderId cuando el pedido es confirmado para hacer polling
       if (data.orderId && !confirmedOrderId) {
         setConfirmedOrderId(data.orderId);
+        onOrderConfirmed?.(data.orderId);
       }
     } catch {
       addMessage('assistant', 'Hubo un error conectando al servidor. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
-  }, [sessionId, addMessage]);
+  }, [sessionId, addMessage, onOrderConfirmed, confirmedOrderId]);
 
   useEffect(() => {
     if (initialized.current) return;

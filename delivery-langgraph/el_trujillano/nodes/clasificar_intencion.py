@@ -23,7 +23,13 @@ Reglas:
 - Si el cliente menciona productos para agregar o quitar, complétalos en `productos`.
 - REMOVE_PRODUCT_BY_NEGATION es cuando rechaza algo recién sugerido ("no, eso no", "mejor sin la gaseosa").
 - REJECT_ADDITION es cuando dice que ya no quiere agregar más ("nada más", "así está bien").
-- CONFIRM_ORDER es cuando quiere cerrar/pagar el pedido.
+- CONFIRM_ORDER es cuando quiere cerrar el pedido y pasar a pagar (aún no ha pagado).
+- PAYMENT_MADE es cuando el cliente AFIRMA que YA pagó o ya hizo la transferencia \
+('ya pagué', 'ya te pagué', 'ya yapeé', 'listo, ya hice el pago') pero sin adjuntar imagen. \
+NO lo confundas con CONFIRM_ORDER (ese es antes de pagar).
+- FILE_COMPLAINT es cuando el cliente quiere RECLAMAR, pedir una DEVOLUCIÓN o REEMBOLSO, \
+o se queja de un problema con su pedido (llegó frío, demoró demasiado, producto equivocado o \
+faltante, mala atención, etc.). Ante cualquier señal de reclamo/queja/devolución, usa esta intención.
 - OUT_OF_SCOPE para temas ajenos al restaurante.
 - `mensaje_sugerido` debe ser breve, cálido y en español peruano.
 - Apóyate en el catálogo recuperado y en el estado del carrito que se te entrega.
@@ -82,5 +88,8 @@ def clasificar_intencion(state: VentasState) -> dict:
         "categoria": resultado.categoria,
         "productos_mencionados": [p.model_dump() for p in resultado.productos],
         "respuesta": resultado.mensaje_sugerido,
+        # Modo reclamo pegajoso: se enciende al detectar un reclamo y se apaga en
+        # cuanto el cliente cambia de tema (para que las fotos vuelvan a pago).
+        "reclamo_activo": resultado.intencion.value == "FILE_COMPLAINT",
         "mensajes": [HumanMessage(content=mensaje), AIMessage(content=resultado.mensaje_sugerido)],
     }

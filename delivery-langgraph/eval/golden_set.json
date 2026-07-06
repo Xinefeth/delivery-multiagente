@@ -21,14 +21,14 @@
       "id": "pay-01",
       "descripcion": "Comprobante Yape correcto, número enmascarado, monto exacto.",
       "pedido_total": 55.0,
-      "comprobante": { "monto": 55.0, "metodo": "Yape", "numero_destinatario": "*** *** 977", "nombre_destinatario": "Restaurante El Trujillano", "es_comprobante_valido": true },
+      "comprobante": { "monto": 55.0, "metodo": "Yape", "numero_destinatario": "*** *** 977", "nombre_destinatario": "Diego Jara", "es_comprobante_valido": true },
       "esperado_validado": true
     },
     {
       "id": "pay-02",
-      "descripcion": "Monto dentro de la tolerancia (+S/0.05).",
+      "descripcion": "Monto dentro de la tolerancia (+S/0.05); nombre parcial del titular.",
       "pedido_total": 55.0,
-      "comprobante": { "monto": 55.05, "metodo": "Yape", "numero_destinatario": "977", "nombre_destinatario": "El Trujillano SAC", "es_comprobante_valido": true },
+      "comprobante": { "monto": 55.05, "metodo": "Yape", "numero_destinatario": "977", "nombre_destinatario": "Diego J.", "es_comprobante_valido": true },
       "esperado_validado": true
     },
     {
@@ -77,10 +77,10 @@
     },
     {
       "id": "rec-03",
-      "descripcion": "Pretensión fuera de política -> se espera escalamiento a humano.",
-      "reclamo": "Exijo la devolución del triple de lo que pagué porque el sabor no me gustó, aunque me comí todo.",
+      "descripcion": "Reclamo fuera del dominio de las políticas (daño material) y sin ángulo cubierto que sondear -> el Deep Agent agota su auto-corrección y escala a un humano (HITL). Una exigencia de dinero no cubierta NO la decide el bot.",
+      "reclamo": "El repartidor chocó mi carro al llegar y exijo que me paguen los S/2000 de la reparación.",
       "esperado_escalado": true,
-      "tema": "reembolso_no_cubierto"
+      "tema": "fuera_de_dominio"
     }
   ]
 }

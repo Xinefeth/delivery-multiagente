@@ -50,4 +50,13 @@ def crear_pedido(state: VentasState) -> dict:
         f"*{config.NUMERO_YAPE_RESTAURANTE}* ({config.NOMBRE_TITULAR_PAGO}) "
         f"y envíame la captura del comprobante 📲."
     )
-    return {"pedido_id": pedido_id, "estado_pedido": PAGO_PENDIENTE, "respuesta": respuesta}
+    # Vaciamos el carrito y los datos de captura: el pedido ya quedó persistido.
+    # Si no lo hiciéramos, un nuevo "Confirmar pedido" recrearía el MISMO pedido
+    # (duplicado) a partir del carrito que quedó en la sesión.
+    return {
+        "pedido_id": pedido_id,
+        "estado_pedido": PAGO_PENDIENTE,
+        "respuesta": respuesta,
+        "carrito": [],
+        "datos_cliente": {},
+    }

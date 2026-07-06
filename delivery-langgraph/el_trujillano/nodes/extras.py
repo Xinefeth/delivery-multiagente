@@ -37,6 +37,21 @@ def responder_directo(state: VentasState) -> dict:
                 f"({config.NOMBRE_TITULAR_PAGO}) y envíame la captura del comprobante 📲."
             )
         }
+    if intencion == "PAYMENT_MADE":
+        # El cliente dice que ya pagó, pero validar requiere ver el comprobante.
+        if state.get("estado_pedido"):
+            return {
+                "respuesta": (
+                    "¡Genial! Para validar tu pago necesito la captura del comprobante "
+                    "(Yape/Plin) 📲. ¿Me la envías, por favor?"
+                )
+            }
+        return {
+            "respuesta": (
+                "No encuentro un pedido pendiente de pago a tu nombre. Si ya hiciste un "
+                "pedido, envíame la captura del comprobante y lo valido 📲."
+            )
+        }
     return {}  # conserva el mensaje_sugerido del clasificador
 
 

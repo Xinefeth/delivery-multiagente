@@ -14,7 +14,7 @@ import re
 from .. import config
 from ..db.database import get_session
 from ..db.models import Order
-from ..estados import PAGO_RECHAZADO, PAGO_VALIDADO
+from ..estados import EN_COCINA, PAGO_RECHAZADO, PAGO_VALIDADO
 from ..state import VentasState
 
 
@@ -67,6 +67,21 @@ def comparar_pago(state: VentasState) -> dict:
         pedido.nombre_destino_pago = comprobante.get("nombre_destinatario")
         nuevo_estado = pedido.estado
         total = pedido.total
+
+    # Camino feliz: la validación determinista ya aprobó el pago (monto+número+
+    # titular). Como el chequeo es determinista, aplicamos la transición crítica
+    # PAGO_VALIDADO -> EN_COCINA de una vez (import perezoso para evitar el ciclo
+    # nodes -> order_flow -> nodes). El HITL del admin queda para casos que el bot
+    # NO pudo validar. Si algo falla al enviar a cocina, el pedido queda en
+    # PAGO_VALIDADO y el admin puede aprobarlo manualmente.
+    if validado:
+        try:
+            from .. import order_flow
+
+            order_flow.enviar_a_cocina(pedido_id)
+            nuevo_estado = EN_COCINA
+        except Exception:
+            nuevo_estado = PAGO_VALIDADO
 
     resultado = {
         "validado": validado,

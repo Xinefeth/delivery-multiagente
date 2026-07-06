@@ -85,6 +85,14 @@ def test_e2e_flujo_venta_hasta_cocina():
     pedido_id = st.get("pedido_id")
     assert pedido_id, "el flujo debió crear un pedido"
 
+    # El carrito debe quedar vacío tras crear el pedido (evita pedidos duplicados).
+    assert not st.get("carrito"), "el carrito debe vaciarse al crear el pedido"
+
+    # Reconfirmar NO debe crear un segundo pedido (carrito ya vacío).
+    st2 = enviar("confirmar pedido")
+    assert st2.get("pedido_id") == pedido_id, "no debe duplicarse el pedido"
+    assert "vac" in st2.get("respuesta", "").lower(), "debe avisar que el carrito está vacío"
+
     # REGLA CRÍTICA: aún en PAGO_PENDIENTE, cocina debe RECHAZAR el pedido.
     try:
         validar_estado_cocina(pedido_id)

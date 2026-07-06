@@ -37,7 +37,7 @@ python-multipart>=0.0.9          # subida de imagen de comprobante
 # --- Autenticación del panel (login con roles) ---
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
-bcrypt>=4.0.0
+bcrypt>=4.0.0,<4.1     # 4.1+ rompe passlib 1.7.4 (quita bcrypt.__about__)
 
 # --- Observabilidad ---
 langsmith>=0.1.80

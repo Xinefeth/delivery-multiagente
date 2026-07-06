@@ -21,15 +21,32 @@ from ..serializers import order_to_dict
 
 router = APIRouter()
 
-# Quick replies contextuales según la intención detectada por el clasificador.
-_QUICK_REPLIES = {
-    "ADD_PRODUCT": ["Confirmar pedido", "Agregar más productos"],
-    "REMOVE_PRODUCT": ["Confirmar pedido", "Agregar más productos"],
-    "REMOVE_PRODUCT_BY_NEGATION": ["Confirmar pedido", "Agregar más productos"],
-    "VIEW_CART": ["Confirmar pedido", "Agregar más productos"],
-    "GREETING": ["Ver menú", "Ver mi carrito"],
-    "SHOW_MENU": ["Ver mi carrito"],
-}
+def quick_replies_para(state: dict) -> list[str]:
+    """Botones contextuales según el ESTADO real, no solo la intención.
+
+    Evita sugerir acciones imposibles (p. ej. "Confirmar pedido" o "Ver mi
+    carrito" cuando el carrito está vacío, que llevaban a callejones sin salida).
+    """
+    paso = (state.get("datos_cliente") or {}).get("pendingDataStep")
+    # Durante la recopilación de datos o el pago no ofrecemos atajos de carrito:
+    # el cliente debe responder la pregunta en curso.
+    if paso and paso != "DONE":
+        return []
+    if state.get("reclamo_activo"):
+        return []
+    # Pedido creado y esperando comprobante: el siguiente paso es adjuntar la
+    # imagen, no un botón de texto. No ofrecemos "Confirmar pedido" de nuevo.
+    if state.get("estado_pedido") == "PAGO_PENDIENTE":
+        return []
+
+    carrito = state.get("carrito") or []
+    if carrito:
+        return ["Confirmar pedido", "Agregar más productos"]
+
+    # Carrito vacío: no tiene sentido "Ver mi carrito" ni "Confirmar pedido".
+    if state.get("intencion_actual") in ("SHOW_MENU", "SHOW_CATEGORY"):
+        return []  # el menú ya se está mostrando
+    return ["Ver menú"]
 
 
 def _derivar_order_status(state: dict) -> str:
@@ -77,7 +94,7 @@ async def _procesar(session_id: str, message: str, file: UploadFile | None) -> d
         "orderStatus": _derivar_order_status(state),
         "orderId": str(pedido_id) if pedido_id else None,
         "intent": intencion,
-        "quickReplies": _QUICK_REPLIES.get(intencion, []),
+        "quickReplies": quick_replies_para(state),
     }
 
 
