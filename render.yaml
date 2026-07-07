@@ -77,5 +77,8 @@ services:
       # Runtime.
       - key: PYTHON_VERSION
         value: "3.11.9"
+      # Free tier (512Mi): la ingesta RAG NO cabe junto a uvicorn -> OOM.
+      # Se deja en "false" y la ingesta se corre aparte (local contra la BD
+      # externa, o por Shell). Ponlo en "true" solo en planes con más RAM.
       - key: RUN_INGEST_ON_START
-        value: "true"
+        value: "false"
