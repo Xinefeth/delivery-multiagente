@@ -82,3 +82,24 @@ services:
       # externa, o por Shell). Ponlo en "true" solo en planes con más RAM.
       - key: RUN_INGEST_ON_START
         value: "false"
+
+  # ---------------- Frontend (Static Site React/Vite) ----------------
+  - type: web
+    name: el-trujillano-frontend
+    runtime: static
+    rootDir: delivery-langgraph/frontend
+    buildCommand: "npm install && npm run build"
+    staticPublishPath: ./dist
+    autoDeploy: true
+    # Proxy al backend + fallback SPA. El ORDEN importa: /api y /uploads van
+    # ANTES que el catch-all /* (Render evalúa de arriba hacia abajo).
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://el-trujillano-api.onrender.com/api/*
+      - type: rewrite
+        source: /uploads/*
+        destination: https://el-trujillano-api.onrender.com/uploads/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
