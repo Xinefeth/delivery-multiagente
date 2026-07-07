@@ -49,9 +49,10 @@ services:
       - key: LANGGRAPH_CHECKPOINTER
         value: postgres
 
-      # Observabilidad LangSmith.
+      # Observabilidad LangSmith (desactivada: sin API key. Pon "true" y agrega
+      # LANGSMITH_API_KEY en el dashboard si quieres trazas).
       - key: LANGSMITH_TRACING
-        value: "true"
+        value: "false"
       - key: LANGSMITH_API_KEY
         sync: false
       - key: LANGSMITH_PROJECT
