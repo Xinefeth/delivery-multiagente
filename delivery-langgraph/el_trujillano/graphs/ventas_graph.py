@@ -73,6 +73,11 @@ _DESTINO_INTENCION = {
 
 
 def route_intencion(state: VentasState) -> str:
+    # Si seguimos dentro de un reclamo (modo pegajoso), el mensaje va al Deep Agent
+    # aunque se haya clasificado como algo ambiguo (p. ej. "yape" al confirmar un
+    # reembolso). El clasificador ya apagó `reclamo_activo` si hubo cambio de tema.
+    if state.get("reclamo_activo"):
+        return "atender_reclamo"
     return _DESTINO_INTENCION.get(state.get("intencion_actual"), "responder_directo")
 
 

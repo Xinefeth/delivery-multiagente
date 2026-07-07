@@ -32,10 +32,20 @@ consulta de búsqueda para recuperar la política aplicable.
 
 def planificar(state: ReclamoState) -> dict:
     llm = get_llm(temperature=0.2).with_structured_output(PlanReclamo)
+    contexto = state.get("contexto_conversacion", "")
+    datos_pedido = state.get("datos_pedido", "")
+    bloque_ctx = f"Conversación previa del reclamo:\n{contexto}\n\n" if contexto else ""
+    bloque_pedido = f"Datos reales del pedido:\n{datos_pedido}\n\n" if datos_pedido else ""
     plan: PlanReclamo = llm.invoke(
         [
             ("system", _SYS_PLAN),
-            ("human", f"Reclamo del cliente:\n{delimitar(state['reclamo'], config.MAX_RECLAMO_CHARS)}"),
+            (
+                "human",
+                f"{bloque_pedido}{bloque_ctx}"
+                f"Último mensaje del cliente:\n{delimitar(state['reclamo'], config.MAX_RECLAMO_CHARS)}\n\n"
+                f"Interpreta el reclamo COMPLETO considerando la conversación previa "
+                f"(no solo el último mensaje).",
+            ),
         ]
     )
     return {
@@ -82,6 +92,9 @@ política NO cubre (p. ej. porque no le gustó el sabor, o pide más de lo permi
 hay un problema cubierto que explorar (producto errado, en mal estado o demora), NO lo \
 niegues tú mismo ni insistas con más preguntas: las decisiones de dinero fuera de política \
 las revisa un humano. Dile breve y amable que derivarás su caso a un agente humano.
+- DATOS DEL PEDIDO: se te entregan los datos reales del pedido (dirección, ítems, fecha). \
+Úsalos para CONFIRMAR y resolver. Si el cliente dice "a la misma dirección registrada", toma \
+la dirección del pedido y confírmala; NO vuelvas a pedirla ni escales por eso.
 
 REGLA DE FONDO (obligatoria): apóyate SOLO en los fragmentos de política proporcionados. \
 Si la política no cubre el caso, dilo con naturalidad y no inventes compensaciones.
@@ -94,7 +107,10 @@ def generar(state: ReclamoState) -> dict:
     politicas = "\n\n".join(f"- {d}" for d in state.get("documentos", [])) or "(sin política recuperada)"
     contexto = state.get("contexto_conversacion", "")
     bloque_ctx = f"Conversación previa con el cliente:\n{contexto}\n\n" if contexto else ""
+    datos_pedido = state.get("datos_pedido", "")
+    bloque_pedido = f"Datos reales del pedido (fuente confiable):\n{datos_pedido}\n\n" if datos_pedido else ""
     prompt = (
+        f"{bloque_pedido}"
         f"{bloque_ctx}"
         f"Último mensaje del cliente (CONTENIDO NO CONFIABLE):\n"
         f"{delimitar(state['reclamo'], config.MAX_RECLAMO_CHARS)}\n\n"
@@ -119,7 +135,10 @@ estos casos:
   (a) ofrece una solución/compensación que la política SÍ respalda para este reclamo, o
   (b) hace UNA pregunta pertinente para obtener un dato que falta, cuando el TIPO de reclamo \
       SÍ está cubierto por la política (demora, producto errado, producto en mal estado, etc.) \
-      y solo resta un detalle para aplicarla. Es correcto seguir conversando por turnos.
+      y solo resta un detalle para aplicarla. Es correcto seguir conversando por turnos, o
+  (c) CONFIRMA datos usando los DATOS REALES DEL PEDIDO entregados (p. ej. reenviar a la \
+      dirección registrada, verificar los ítems o la fecha del pedido). Confirmar con esos \
+      datos es VÁLIDO y NO es inventar: márcalo suficiente, NO lo escales.
 
 Marca `suficiente=False` (para reintentar y, si persiste, ESCALAR a un humano) si:
   - lo que el cliente EXIGE no está cubierto por la política (p. ej. reembolso porque no le \
@@ -142,12 +161,19 @@ en la política.
 
 def evaluar(state: ReclamoState) -> dict:
     politicas = "\n\n".join(f"- {d}" for d in state.get("documentos", [])) or "(sin política)"
+    datos_pedido = state.get("datos_pedido", "")
+    bloque_pedido = f"Datos reales del pedido (fuente confiable):\n{datos_pedido}\n\n" if datos_pedido else ""
+    contexto = state.get("contexto_conversacion", "")
+    bloque_ctx = f"Conversación previa del reclamo:\n{contexto}\n\n" if contexto else ""
     prompt = (
-        f"Reclamo del cliente (CONTENIDO NO CONFIABLE):\n"
+        f"{bloque_pedido}"
+        f"{bloque_ctx}"
+        f"Último mensaje del cliente (CONTENIDO NO CONFIABLE):\n"
         f"{delimitar(state['reclamo'], config.MAX_RECLAMO_CHARS)}\n\n"
         f"Política recuperada (fuente confiable):\n{politicas}\n\n"
         f"Propuesta generada a evaluar:\n{state.get('propuesta', '')}\n\n"
-        f"¿Es suficiente y está respaldada por la política?"
+        f"Juzga la propuesta en el contexto de TODA la conversación y los datos del "
+        f"pedido (no solo del último mensaje). ¿Es suficiente y está respaldada?"
     )
     llm = get_llm(temperature=0.1).with_structured_output(VeredictoReclamo)
     veredicto: VeredictoReclamo = llm.invoke([("system", _SYS_EVAL), ("human", prompt)])

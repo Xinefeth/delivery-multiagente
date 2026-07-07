@@ -55,6 +55,7 @@ class ReclamoState(TypedDict, total=False):
     reclamo: str          # último mensaje del cliente en el reclamo
     order_id: int | None
     contexto_conversacion: str  # turnos previos del reclamo (para que fluya)
+    datos_pedido: str     # datos reales del pedido (dirección, ítems, fecha) para confirmar sin escalar
 
     plan: dict | None     # PlanReclamo serializado
     consulta: str         # consulta de búsqueda actual

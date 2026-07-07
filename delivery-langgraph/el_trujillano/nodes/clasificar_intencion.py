@@ -37,6 +37,21 @@ faltante, mala atención, etc.). Ante cualquier señal de reclamo/queja/devoluci
 """ + REGLA_ANTIINYECCION
 
 
+# Intenciones que SÍ sacan al cliente de un reclamo en curso (cambio claro de tema).
+# El resto (pago, out-of-scope, rechazo…) se considera continuación del reclamo.
+_SALIDA_RECLAMO = {
+    "SHOW_MENU",
+    "SHOW_CATEGORY",
+    "ADD_PRODUCT",
+    "REMOVE_PRODUCT",
+    "REMOVE_PRODUCT_BY_NEGATION",
+    "VIEW_CART",
+    "CONFIRM_ORDER",
+    "CANCEL_ORDER",
+    "GREETING",
+}
+
+
 def _historial_texto(mensajes: list, n: int) -> str:
     if not mensajes:
         return "(sin historial)"
@@ -83,13 +98,23 @@ def clasificar_intencion(state: VentasState) -> dict:
         [("system", _SYSTEM), ("human", prompt_usuario)]
     )
 
+    intent = resultado.intencion.value
+    # Modo reclamo PEGAJOSO: una vez dentro de un reclamo, seguimos en él aunque el
+    # mensaje se clasifique como algo ambiguo (p. ej. "yape, el mismo número" al
+    # confirmar un reembolso). Solo salimos si el cliente CLARAMENTE cambia de tema
+    # (pide menú, agrega productos, confirma/cancela pedido, saluda de nuevo…).
+    if intent == "FILE_COMPLAINT":
+        reclamo_activo = True
+    elif state.get("reclamo_activo") and intent not in _SALIDA_RECLAMO:
+        reclamo_activo = True
+    else:
+        reclamo_activo = False
+
     return {
-        "intencion_actual": resultado.intencion.value,
+        "intencion_actual": intent,
         "categoria": resultado.categoria,
         "productos_mencionados": [p.model_dump() for p in resultado.productos],
         "respuesta": resultado.mensaje_sugerido,
-        # Modo reclamo pegajoso: se enciende al detectar un reclamo y se apaga en
-        # cuanto el cliente cambia de tema (para que las fotos vuelvan a pago).
-        "reclamo_activo": resultado.intencion.value == "FILE_COMPLAINT",
+        "reclamo_activo": reclamo_activo,
         "mensajes": [HumanMessage(content=mensaje), AIMessage(content=resultado.mensaje_sugerido)],
     }
