@@ -10,6 +10,7 @@ import os
 import time
 
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import joinedload, selectinload
 
 from ... import config
@@ -74,7 +75,12 @@ async def _procesar(session_id: str, message: str, file: UploadFile | None) -> d
         proof_url = f"/uploads/{nombre}"
 
     cfg = {"configurable": {"thread_id": session_id}}
-    state = grafo_ventas.invoke(
+    # grafo_ventas.invoke es BLOQUEANTE (LLM + SQL). Ejecutarlo directo en este
+    # endpoint async congelaría el event loop del único worker y Render, al no
+    # poder responder /api/health, reiniciaría el servicio (502). Lo corremos en
+    # un hilo aparte para mantener vivo el loop (y el health check).
+    state = await run_in_threadpool(
+        grafo_ventas.invoke,
         {"session_id": session_id, "input_usuario": message, "imagen_comprobante": imagen_b64},
         config=cfg,
     )
