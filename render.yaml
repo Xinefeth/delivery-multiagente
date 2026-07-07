@@ -82,6 +82,11 @@ services:
       # externa, o por Shell). Ponlo en "true" solo en planes con más RAM.
       - key: RUN_INGEST_ON_START
         value: "false"
+      # Limita las "arenas" de malloc de glibc: con hilos (threadpool) Python
+      # infla mucho el RSS. Bajarlo a 2 recorta la memoria residente sin tocar
+      # código y ayuda a caber en los 512Mi del plan free.
+      - key: MALLOC_ARENA_MAX
+        value: "2"
 
   # ---------------- Frontend (Static Site React/Vite) ----------------
   - type: web
