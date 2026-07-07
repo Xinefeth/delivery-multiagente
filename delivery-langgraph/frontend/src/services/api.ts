@@ -1,6 +1,20 @@
 import axios from 'axios';
 
-const BASE = '/api';
+// En producción (Render) se define VITE_API_URL con la URL absoluta del backend,
+// p.ej. https://el-trujillano-api.onrender.com/api. En desarrollo cae a '/api',
+// que el proxy de Vite (vite.config.ts) redirige a http://localhost:8000.
+const BASE = import.meta.env.VITE_API_URL || '/api';
+
+// Origen del backend (sin el sufijo /api), para construir URLs de archivos
+// servidos por el backend como /uploads/... (comprobantes de pago).
+export const API_ORIGIN = BASE.replace(/\/api\/?$/, '');
+
+/** Convierte una ruta relativa del backend (p.ej. /uploads/x.jpg) en absoluta. */
+export const assetUrl = (path?: string | null): string | undefined => {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_ORIGIN}${path.startsWith('/') ? '' : '/'}${path}`;
+};
 
 export const api = axios.create({ baseURL: BASE });
 

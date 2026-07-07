@@ -3,7 +3,7 @@ import {
   getAdminOrders, getMetrics, validatePayment,
   getAdminProducts, updateProduct, createProduct,
   getAdminDrivers, createDriver, updateDriver,
-  getPendingPayments,
+  getPendingPayments, assetUrl,
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -159,7 +159,7 @@ export default function AdminPage() {
                     {order.items.map((i: any) => `${i.quantity}x ${i.product.name}`).join(', ')}
                   </div>
                   {order.payment_proof_url && (
-                    <a href={order.payment_proof_url} target="_blank" rel="noreferrer"
+                    <a href={assetUrl(order.payment_proof_url)} target="_blank" rel="noreferrer"
                       className="text-xs text-blue-400 hover:underline mt-1 block">Ver comprobante</a>
                   )}
                   {order.driver && (
@@ -219,8 +219,8 @@ export default function AdminPage() {
                       {/* Comprobante */}
                       {order.payment_proof_url && (
                         <div className="mb-3">
-                          <a href={order.payment_proof_url} target="_blank" rel="noreferrer">
-                            <img src={order.payment_proof_url} alt="Comprobante" className="rounded-lg max-h-40 object-contain border border-gray-600 w-full" />
+                          <a href={assetUrl(order.payment_proof_url)} target="_blank" rel="noreferrer">
+                            <img src={assetUrl(order.payment_proof_url)} alt="Comprobante" className="rounded-lg max-h-40 object-contain border border-gray-600 w-full" />
                           </a>
                         </div>
                       )}

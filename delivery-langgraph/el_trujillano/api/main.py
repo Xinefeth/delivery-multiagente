@@ -21,7 +21,9 @@ app = FastAPI(title="El Trujillano Delivery", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
+    # Desarrollo local (Vite) + cualquier frontend desplegado en Render (*.onrender.com).
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
