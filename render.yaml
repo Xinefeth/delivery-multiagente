@@ -96,15 +96,19 @@ services:
     buildCommand: "npm install && npm run build"
     staticPublishPath: ./dist
     autoDeploy: true
-    # Proxy al backend + fallback SPA. El ORDEN importa: /api y /uploads van
-    # ANTES que el catch-all /* (Render evalúa de arriba hacia abajo).
+    envVars:
+      # El frontend llama al backend por URL ABSOLUTA en build time (Vite inyecta
+      # VITE_*). El backend ya habilita CORS para *.onrender.com. Antes se usaban
+      # rewrites proxy (/api/* y /uploads/* -> backend), pero mezclar rewrites a
+      # URLs externas con el fallback SPA hacía que /* -> /index.html devolviera
+      # un body VACÍO (pantalla en blanco en /login, /admin, etc.). Con la URL
+      # absoluta ya no hacen falta esos proxys y el fallback SPA vuelve a servir
+      # el index.html correctamente.
+      - key: VITE_API_URL
+        value: https://el-trujillano-api.onrender.com/api
+    # Único rewrite: fallback SPA para que las rutas de React Router (deep links
+    # y refresh en /login, /admin, ...) sirvan index.html.
     routes:
-      - type: rewrite
-        source: /api/*
-        destination: https://el-trujillano-api.onrender.com/api/*
-      - type: rewrite
-        source: /uploads/*
-        destination: https://el-trujillano-api.onrender.com/uploads/*
       - type: rewrite
         source: /*
         destination: /index.html
