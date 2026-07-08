@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ChatbotPage from './pages/ChatbotPage';
 import LoginPage from './pages/LoginPage';
@@ -17,7 +17,7 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles:
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           <Route path="/" element={<ChatbotPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -38,7 +38,7 @@ export default function App() {
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </AuthProvider>
   );
 }
