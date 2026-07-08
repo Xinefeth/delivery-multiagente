@@ -1,50 +1,36 @@
 # El Trujillano Delivery — Sistema Multiagente
 
-Sistema de delivery automatizado para restaurante, desarrollado como proyecto académico. Implementa una arquitectura multiagente con 10 agentes especializados que gestionan el ciclo completo de un pedido: desde el chatbot hasta la entrega y encuesta de satisfacción.
+Sistema de delivery automatizado para el restaurante **El Trujillano** (Trujillo, Perú), desarrollado como proyecto académico. Implementa una arquitectura multiagente con **LangGraph + API de Claude** que gestiona el ciclo completo de un pedido: desde el chatbot hasta la entrega, más un **agente de reclamos basado en el patrón Deep Agent**.
 
 ## Descripción general
 
-El sistema reemplaza un proceso manual (AS-IS) con un flujo digital automatizado (TO-BE). Un cliente interactúa con un chatbot web que simula WhatsApp; detrás, el `OrchestratorAgent` coordina los demás agentes para gestionar el menú, carrito, pagos, cocina, reparto y notificaciones.
+El sistema reemplaza un proceso manual (AS-IS) con un flujo digital automatizado (TO-BE). Un cliente interactúa con un chatbot web que simula WhatsApp; detrás, un **grafo de estados de LangGraph** coordina los nodos para gestionar el menú, carrito, pagos, cocina, reparto y notificaciones.
 
 **Resultado:** validación de pagos de 10-20 min a menos de 3 min, cero errores de cálculo y trazabilidad completa del pedido.
+
+> **Principio de diseño innegociable:** un componente solo es "agente" (usa chat model) si el LLM debe **razonar, clasificar o interpretar lenguaje/imágenes**. SQL, sumas, validaciones con `if` y CRUD son **nodos deterministas o tools**, NO agentes.
 
 ---
 
 ## Arquitectura general
 
-El sistema está construido sobre tres capas:
+El sistema es un **monolito modular** desplegado como tres servicios en Render:
 
 ```
 CLIENTE (Browser)
-     │ HTTP REST
+     │ HTTPS
      ▼
-BACKEND (Node.js + Express + TypeScript)
-     │ Prisma ORM
-     ▼
-BASE DE DATOS (PostgreSQL)
+FRONTEND (React + Vite + Tailwind — Static Site)   ── proxy /api ─┐
+                                                                   ▼
+                                          BACKEND (FastAPI + LangGraph, Python)
+                                                                   │ SQLAlchemy + pgvector
+                                                                   ▼
+                                          BASE DE DATOS (PostgreSQL 16 + pgvector)
 ```
 
-```
-Cliente (Chatbot Web / Panel Admin / Cocina / Repartidor)
-        │
-        ▼
-   API REST (Express)
-        │
-        ▼
- OrchestratorAgent  ──► ChatbotAgent    (Claude AI — clasificación de intención)
-  (Máquina de       ──► MenuAgent
-   13 estados)      ──► OrderAgent
-                    ──► PaymentAgent    ──► PaymentValidationAgent (Claude Vision)
-                    ──► KitchenAgent
-                    ──► DeliveryAgent
-                    ──► NotificationAgent
-                    ──► AdminAgent
-                           │
-                           ▼
-                   PostgreSQL (Prisma ORM)
-```
+El orquestador **es el grafo**: no existe ninguna clase `OrchestratorAgent`. La máquina de estados del pedido es un `StateGraph` (`el_trujillano/graphs/ventas_graph.py`) que mantiene el estado, decide transiciones con aristas condicionales y delega en los nodos.
 
-Ver diagrama completo en [`docs/arquitectura.md`](docs/arquitectura.md).
+Ver diagrama completo en [`docs/arquitectura.md`](delivery-langgraph/docs/arquitectura.md).
 
 ---
 
@@ -52,213 +38,126 @@ Ver diagrama completo en [`docs/arquitectura.md`](docs/arquitectura.md).
 
 | Capa | Tecnología |
 |------|-----------|
-| Runtime | Node.js 20 + TypeScript 5.3 |
-| Framework | Express 4.18 |
-| ORM | Prisma 5.7 |
-| Base de datos | PostgreSQL 15 |
-| IA | Anthropic Claude (SDK 0.97) |
-| Auth | JWT + bcryptjs |
-| Archivos | Multer (local `/uploads`) |
+| Lenguaje | Python 3.11 |
+| Orquestación | LangGraph (`StateGraph`) |
+| Tools / RAG / salida estructurada | LangChain |
+| IA | API de Claude (Anthropic) vía `langchain-anthropic` — `claude-haiku-4-5-20251001` con visión nativa |
+| Embeddings | Voyage AI (`langchain-voyageai`) o HuggingFace |
+| API REST | FastAPI + auth JWT con roles |
+| ORM / relacional | SQLAlchemy |
+| Vector store | PostgreSQL 16 + pgvector |
+| Observabilidad | LangSmith |
 | Frontend | React 18 + Vite 5 + TailwindCSS 3 |
-| Routing | React Router DOM 6 |
-| HTTP Client | Axios 1.6 |
+
+> **Un solo backend.** El frontend React consume EXCLUSIVAMENTE la API FastAPI bajo `/api`. La capa `el_trujillano/api/serializers.py` adapta los modelos internos (en español) a la forma que el frontend espera (campos en inglés, `id` como string).
 
 ---
 
-## Los 10 Agentes y sus Roles
+## Componentes: qué es agente y qué es determinista (y POR QUÉ)
 
-| Agente | Archivo | Responsabilidad |
-|--------|---------|-----------------|
-| `OrchestratorAgent` | `OrchestratorAgent.ts` | Director de orquesta. Mantiene el estado de cada sesión y delega a los demás. |
-| `ChatbotAgent` | `ChatbotAgent.ts` | Clasificador de intenciones usando Claude AI. |
-| `MenuAgent` | `MenuAgent.ts` | Consulta y formatea el menú desde la BD. |
-| `OrderAgent` | `OrderAgent.ts` | Gestiona el carrito y crea pedidos en BD. |
-| `PricingAgent` | _(dentro de OrderAgent)_ | Calcula subtotales, delivery (S/ 5.00 fijo) y totales. |
-| `PaymentAgent` | `PaymentAgent.ts` | Instrucciones de pago y gestión de estados de comprobante. |
-| `PaymentValidationAgent` | `PaymentValidationAgent.ts` | Valida comprobantes con Claude Vision (IA). |
-| `KitchenAgent` | `KitchenAgent.ts` | Recibe pedidos validados y los pasa a cocina. |
-| `DeliveryAgent` | `DeliveryAgent.ts` | Asigna repartidores y confirma entregas. |
-| `NotificationAgent` | `NotificationAgent.ts` | Persiste notificaciones en BD para cada canal. |
-| `AdminAgent` | `AdminAgent.ts` | Panel de control del administrador. |
+### Nodos CON chat model (agentes reales)
 
----
+| Componente | ¿Por qué ES agente? |
+|---|---|
+| `clasificar_intencion` | El LLM **interpreta lenguaje natural ambiguo** del cliente y lo mapea a una intención. Salida estructurada (`IntencionClasificada`). |
+| `validar_comprobante` | Modelo con **visión**: lee la imagen del comprobante Yape/Plin y **extrae** monto, método, número (aunque esté enmascarado `*** *** 977`) y nombre. Salida estructurada (`ComprobanteExtraido`). |
+| Deep Agent: `planificar` | **Razona** para descomponer el reclamo (qué pasó / qué pide / qué política aplica). |
+| Deep Agent: `generar` | **Redacta** la propuesta de solución apoyada solo en la política recuperada. |
+| Deep Agent: `evaluar` | Sub-agente **crítico**: juzga si la propuesta tiene respaldo real. |
 
-## Cómo funciona el sistema — Flujo completo detallado
+### Nodos DETERMINISTAS / tools (sin LLM)
 
-### FASE 1 — Conversación con el Cliente (Chatbot)
-
-El cliente abre el frontend React y escribe. Cada mensaje llega a `POST /api/chat/message`.
-
-El sistema utiliza **dos modos de chatbot en paralelo**:
-
-**Modo A — `OrchestratorAgent` (máquina de estados pura):**
-Funciona con `POST /api/chat`. Maneja estados fijos secuenciales:
-
-```
-GREETING → COLLECTING_NAME → MENU → SELECTING →
-COLLECTING_PHONE → COLLECTING_ADDRESS → COLLECTING_REFERENCE →
-CONFIRMING_ORDER → PAYMENT_INSTRUCTIONS → WAITING_PROOF →
-AWAITING_VALIDATION → ORDER_ACTIVE → SURVEY
-```
-
-Cada mensaje del cliente avanza o mantiene el estado actual.
-
-**Modo B — `ChatbotAgent` con Claude AI (clasificador inteligente):**
-Funciona con `POST /api/chat/message`. Aquí ocurre lo siguiente:
-
-1. Se envía a **Claude Haiku** el mensaje del cliente, el historial de conversación (últimos 6 turnos), el catálogo de productos y el estado actual del carrito.
-2. Claude devuelve un JSON con la **intención clasificada** (ej: `ADD_PRODUCT`, `CONFIRM_ORDER`, `SELECT_PAYMENT_YAPE`, etc.) y un `user_message` sugerido.
-3. El servidor en `chatbot.ts` lee esa intención y ejecuta la lógica correspondiente.
-
-Esto permite lenguaje natural: el cliente puede decir *"ponme 2 lomos"*, *"ya no quiero el ceviche"* o *"quiero pagar con Yape"* y el sistema lo entiende correctamente.
-
-Intenciones que reconoce Claude:
-
-| Intent | Descripción |
-|--------|-------------|
-| `GREETING` | Saludo o inicio de conversación |
-| `SHOW_MENU` | Pide ver el menú completo |
-| `SHOW_CATEGORY` | Pide una categoría específica |
-| `ADD_PRODUCT` | Quiere agregar un producto al carrito |
-| `REMOVE_PRODUCT` | Quiere quitar todas las unidades de un producto |
-| `REMOVE_PRODUCT_BY_NEGATION` | Rechaza un producto con negación |
-| `VIEW_CART` | Quiere ver su carrito actual |
-| `CONFIRM_ORDER` | Confirma el pedido explícitamente |
-| `REJECT_ADDITION` | Dice "no" cuando se le pregunta si desea agregar algo más |
-| `SELECT_PAYMENT_YAPE` | Elige pagar por Yape |
-| `SELECT_PAYMENT_PLIN` | Elige pagar por Plin |
-| `CHECK_ORDER_STATUS` | Pregunta por el estado de su pedido |
-| `CANCEL_ORDER` | Quiere cancelar el pedido |
-| `OUT_OF_SCOPE` | Pregunta no relacionada con el restaurante |
+| Componente | ¿Por qué NO es agente? |
+|---|---|
+| `consultar_menu` | RAG semántico + **SQL** sobre el catálogo. |
+| `gestionar_carrito` | Agrega/quita ítems: matching + **aritmética**. |
+| `recopilar_datos_cliente` | Máquina de pasos `NAME→PHONE→ADDRESS→REFERENCE→CONFIRMING` con validaciones (`if`, teléfono = 9 dígitos). |
+| `crear_pedido` | **CRUD**: persiste el pedido en `PAGO_PENDIENTE`. |
+| `comparar_pago` | Compara extraído vs pedido: monto (±S/0.10), número, nombre. **Comparaciones**, no razonamiento. |
+| `validar_estado_cocina` | **REGLA CRÍTICA**: un `if` que rechaza todo pedido que no esté en `PAGO_VALIDADO`. |
+| `asignar_repartidor` | Primer repartidor disponible en **transacción atómica** (`SELECT ... FOR UPDATE SKIP LOCKED`). |
+| `guardar_notificacion` | **CRUD** de notificaciones por canal. |
+| `cerrar_pedido` | Cierra el pedido + crea encuesta vacía + libera repartidor. |
+| `recuperar` (Deep Agent) | **RAG** sobre el PDF de políticas (pgvector). |
 
 ---
 
-### FASE 2 — Armado del Carrito
+## Cómo funciona el sistema — Flujo completo
 
-Cuando Claude clasifica `ADD_PRODUCT`, el route handler:
+### FASE 1 — Conversación con el cliente (Chatbot)
 
-1. Llama a `productService.findByName()` para encontrar el producto en BD.
-2. Llama a `cartService.addItem()` que guarda el carrito **en memoria** (por sessionId).
-3. Responde al cliente con el resumen actualizado del carrito.
+Cada mensaje del cliente llega a `POST /api/chat/message`. El nodo `clasificar_intencion` envía a **Claude** el mensaje, el historial (últimos turnos), el catálogo y el estado del carrito, y devuelve la **intención clasificada** (`ADD_PRODUCT`, `CONFIRM_ORDER`, `SELECT_PAYMENT_YAPE`, etc.). El grafo ejecuta la lógica correspondiente.
 
-El carrito vive en RAM, no en BD, hasta que el cliente confirma el pedido.
+Esto permite lenguaje natural: el cliente puede decir *"ponme 2 lomos"*, *"ya no quiero el ceviche"* o *"quiero pagar con Yape"* y el sistema lo entiende.
 
----
+Intenciones reconocidas: `GREETING`, `SHOW_MENU`, `SHOW_CATEGORY`, `ADD_PRODUCT`, `REMOVE_PRODUCT`, `REMOVE_PRODUCT_BY_NEGATION`, `VIEW_CART`, `CONFIRM_ORDER`, `REJECT_ADDITION`, `SELECT_PAYMENT_YAPE`, `SELECT_PAYMENT_PLIN`, `CHECK_ORDER_STATUS`, `CANCEL_ORDER`, `OUT_OF_SCOPE`.
 
-### FASE 3 — Recopilación de Datos del Cliente
+### FASE 2 — Armado del carrito
 
-Cuando el cliente confirma (`CONFIRM_ORDER`), el sistema entra en un flujo estructurado paso a paso vía `pendingDataStep`:
+`gestionar_carrito` encuentra el producto en la BD, actualiza el carrito (persistido en el estado del grafo por `session_id`) y responde con el resumen actualizado.
+
+### FASE 3 — Recopilación de datos del cliente
+
+Al confirmar (`CONFIRM_ORDER`), `recopilar_datos_cliente` entra en un flujo paso a paso:
 
 ```
 NAME → PHONE → ADDRESS → REFERENCE → CONFIRMING
 ```
 
-Cada respuesta del cliente se valida (ej: teléfono debe tener 9 dígitos) y se almacena en la sesión. Al llegar a `CONFIRMING`, se muestra el resumen completo con el total (subtotal + S/ 5.00 de delivery).
+Cada respuesta se valida (ej: teléfono = 9 dígitos). En `CONFIRMING` se muestra el resumen con el total (subtotal + S/ 5.00 de delivery).
 
----
+### FASE 4 — Creación del pedido en base de datos
 
-### FASE 4 — Creación del Pedido en Base de Datos
+Al confirmar explícitamente, `crear_pedido` persiste el pedido en PostgreSQL con estado `PAGO_PENDIENTE` y muestra los datos de pago: **Yape/Plin al 938749977**.
 
-Cuando el cliente confirma explícitamente (`"sí confirmo"`, `"confirmo"`, `"procede"`):
+### FASE 5 — Validación del comprobante con IA
 
-1. `orderService.createOrder()` persiste el pedido en PostgreSQL con estado `PAGO_PENDIENTE`.
-2. Se limpia el carrito en memoria.
-3. Se muestra al cliente los datos de pago: **Yape/Plin al 938749977**.
-
----
-
-### FASE 5 — Validación del Comprobante con IA
-
-El cliente adjunta una imagen (foto o captura de pantalla). El route handler la recibe vía `multer` y la guarda en `/uploads/`.
-
-Luego llama a `paymentAgent.processProof()`, que invoca al `PaymentValidationAgent`:
+El cliente adjunta una imagen. `validar_comprobante` (Claude Vision) la lee:
 
 ```
-1. Verificar duplicado
-   ¿El mismo archivo ya fue validado en otro pedido?
-   ↓
-2. extractWithClaude() — Lee la imagen con Claude Haiku Vision:
-   - Detecta monto pagado
-   - Detecta método (Yape/Plin)
-   - Detecta número de destinatario (aunque esté enmascarado como "*** *** 977")
-   - Detecta nombre del destinatario
-   ↓
-3. compare() — Valida las 3 condiciones:
-   a. Monto coincide con el total del pedido (tolerancia ±S/ 0.10)
+1. Verificar duplicado (¿el mismo archivo ya fue validado?)
+2. Extraer con Claude Vision: monto, método (Yape/Plin), número destinatario, nombre
+3. comparar_pago valida 3 condiciones:
+   a. Monto coincide con el total (tolerancia ±S/ 0.10)
    b. Número de destino corresponde al 938749977
-   c. Nombre del destinatario es "El Trujillano" o "Diego Jar*"
-   ↓
-4. Si todo OK  → estado PAGO_VALIDADO (en transacción atómica en BD)
-   Si falla    → estado PAGO_RECHAZADO + razón detallada al cliente
+   c. Nombre del destinatario es el titular esperado
+4. OK  → PAGO_VALIDADO (transacción atómica)
+   Falla → PAGO_RECHAZADO + razón detallada al cliente
 ```
 
-Si Claude Vision no está disponible (sin API key, imagen no accesible), hay un **fallback por nombre de archivo** para demos académicas: si el archivo se llama `monto_menor_xxx.jpg`, simula monto incorrecto; si no contiene palabras clave de rechazo, se aprueba automáticamente.
+También admite **revisión manual del administrador (HITL)**, que puede aprobar o rechazar cualquier comprobante desde el panel.
 
-La validación también admite **revisión manual del administrador**, quien puede aprobar o rechazar cualquier comprobante desde el panel de administración, con notas opcionales.
+### FASE 6 — Cocina (regla crítica de negocio)
 
----
-
-### FASE 6 — Cocina (Regla Crítica de Negocio)
-
-Cuando el pago es validado (automático o por admin), `kitchenAgent.receiveOrder()` es llamado:
-
-```typescript
-// REGLA CRÍTICA: Solo acepta pedidos con PAGO_VALIDADO
-if (order.status !== 'PAGO_VALIDADO') {
-  return { success: false, message: '...' };
-}
-```
-
-Si la condición se cumple:
-
-1. Estado del pedido → `EN_COCINA`
-2. Se guarda una notificación para el chatbot (cliente): *"Tu pedido está siendo preparado"*
-3. Se guarda una notificación para la pantalla de cocina con la lista completa de productos
-
-El **frontend de cocina** (`KitchenPage.tsx`) muestra todos los pedidos en `EN_COCINA`. Cuando el cocinero hace clic en "Listo":
-
-- `kitchenAgent.markOrderReady()` cambia estado a `LISTO_PARA_REPARTO`
-- Inmediatamente llama a `deliveryAgent.assignDriver()` de forma automática
-
----
+`validar_estado_cocina` **rechaza cualquier pedido que no esté en `PAGO_VALIDADO`**. Si el pago está validado: estado → `EN_COCINA` y se notifica al cliente y a la pantalla de cocina. Cuando el cocinero marca "Listo" → `LISTO_PARA_REPARTO` y se intenta asignar repartidor automáticamente.
 
 ### FASE 7 — Reparto
 
-`DeliveryAgent.assignDriver()` ejecuta los siguientes pasos:
+`asignar_repartidor` toma el primer repartidor disponible en una **transacción atómica** (`SELECT ... FOR UPDATE SKIP LOCKED`), lo asigna y marca como no disponible. Estado → `EN_REPARTO`. El frontend hace polling y muestra al cliente el repartidor asignado.
 
-1. Busca el primer repartidor con `is_available: true` en BD.
-2. En una **transacción atómica**: asigna el repartidor al pedido + marca repartidor como no disponible.
-3. Estado → `EN_REPARTO`
-4. Envía un **mensaje WhatsApp** al repartidor con dirección, lista de productos y datos del cliente vía `whatsappService`.
-5. El frontend hace polling a `GET /api/chat/driver-check/:sessionId` y cuando detecta la asignación, muestra al cliente el nombre y teléfono del repartidor.
+### FASE 8 — Confirmación de entrega y encuesta
+
+El repartidor confirma la entrega → `ENTREGADO`; `cerrar_pedido` libera al repartidor, pasa a `CERRADO` y crea el registro de encuesta. El frontend detecta el cierre y activa la encuesta (1 a 5 + comentario).
 
 ---
 
-### FASE 8 — Confirmación de Entrega y Encuesta
+## Agente de reclamos (Deep Agent)
 
-El repartidor confirma la entrega desde `POST /api/driver/orders/:id/confirm-delivery`:
+Un segundo grafo atiende reclamos con el patrón Deep Agent (planificar → recuperar → generar → evaluar):
 
-1. `deliveryAgent.confirmDelivery()` cambia estado a `ENTREGADO`
-2. Libera al repartidor (`is_available: true` de vuelta) en la misma transacción
-3. Llama a `closeOrder()` internamente → estado `CERRADO` + crea registro de encuesta vacía en BD
+```
+planificar 🤖 → recuperar (RAG pgvector) → generar 🤖 → evaluar 🤖 (crítico)
+   ├─ suficiente → responder
+   ├─ insuficiente y quedan reintentos → recuperar (itera)
+   └─ MAX_ITERACIONES → escalar (HITL, deriva a humano)
+```
 
-El frontend hace polling a `GET /api/chat/survey-check/:sessionId`. Cuando detecta `CERRADO`, activa el flujo de encuesta donde el cliente califica del 1 al 5 y puede dejar un comentario, guardados en la tabla `Survey` de PostgreSQL.
-
----
-
-## Panel de Administración
-
-El `AdminAgent` requiere autenticación JWT con rol `ADMIN` (middleware aplicado a todas las rutas `/api/admin/*`). Permite:
-
-- Ver todos los pedidos filtrados por estado
-- Ver métricas del día (total pedidos, pendientes, ingresos estimados)
-- **Validar comprobantes manualmente** (override a la validación automática): si aprueba, internamente llama a `kitchenAgent.receiveOrder()`
-- Gestionar productos (crear, editar precio, activar/desactivar)
-- Gestionar repartidores (crear, editar, cambiar disponibilidad)
+- **Memoria en el estado:** `historial` (consultas intentadas) e `iteraciones`.
+- **Límite operativo:** `MAX_ITERACIONES_RECLAMO = 3`.
 
 ---
 
-## Estados del Pedido — Máquina de Estados
+## Estados del pedido — Máquina de estados
 
 ```
 PAGO_PENDIENTE
@@ -269,176 +168,89 @@ PAGO_RECHAZADO              (validación automática o admin rechaza)
     └─→ PAGO_ENVIADO        (cliente reenvía nuevo comprobante)
 
 PAGO_VALIDADO
-    └─→ EN_COCINA           ← REGLA CRÍTICA: KitchenAgent bloquea todo lo demás
+    └─→ EN_COCINA           ← REGLA CRÍTICA: validar_estado_cocina bloquea todo lo demás
 
-EN_COCINA
-    └─→ LISTO_PARA_REPARTO  (cocina marca el pedido como listo)
-
-LISTO_PARA_REPARTO
-    └─→ EN_REPARTO          (DeliveryAgent asigna repartidor automáticamente)
-
-EN_REPARTO
-    └─→ ENTREGADO           (repartidor confirma la entrega)
-
-ENTREGADO
-    └─→ CERRADO             (cierre automático + encuesta de satisfacción)
+EN_COCINA → LISTO_PARA_REPARTO → EN_REPARTO → ENTREGADO → CERRADO
 ```
 
-> **Regla crítica de negocio:** `KitchenAgent` rechaza cualquier pedido que no esté en estado `PAGO_VALIDADO`. Ningún pedido puede pasar a cocina sin pago confirmado.
+> **Regla crítica de negocio:** ningún pedido puede pasar a cocina sin pago confirmado (`PAGO_VALIDADO`).
 
-Ver flujo completo con diagramas Mermaid en [`docs/flujo-pedido.md`](docs/flujo-pedido.md).
+Ver flujo completo con diagramas Mermaid en [`docs/flujo-pedido.md`](delivery-langgraph/docs/flujo-pedido.md).
 
 ---
 
 ## Integraciones con Claude AI
 
-El sistema usa Claude en dos puntos específicos:
-
 | Punto | Modelo | Para qué |
 |-------|--------|----------|
-| `ChatbotAgent` | `claude-haiku-4-5-20251001` | Clasifica la intención del mensaje del cliente en lenguaje natural y genera una respuesta sugerida |
-| `PaymentValidationAgent` | `claude-haiku-4-5-20251001` | Analiza la imagen del comprobante con Claude Vision y extrae monto, método y número destinatario |
+| `clasificar_intencion` | `claude-haiku-4-5-20251001` | Clasifica la intención del mensaje del cliente en lenguaje natural |
+| `validar_comprobante` | `claude-haiku-4-5-20251001` | Analiza la imagen del comprobante con Claude Vision y extrae monto, método y número |
+| Deep Agent (`planificar`/`generar`/`evaluar`) | `claude-haiku-4-5-20251001` | Razona, redacta y evalúa la resolución de reclamos |
 
-El modelo se configura en `.env` con la variable `CLAUDE_MODEL`. Si no se define, usa `claude-haiku-4-5-20251001` por defecto (más rápido y económico).
-
----
-
-## Requisitos previos
-
-- Node.js 20+
-- PostgreSQL 15 (corriendo en localhost:5432)
-- npm 9+
-- Clave API de Anthropic (para Claude Vision y clasificación de intenciones)
+El modelo se configura con la variable `CLAUDE_MODEL`.
 
 ---
 
-## Instalación
+## Despliegue en Render
 
-### 1. Clonar y preparar variables de entorno
+El sistema está desplegado en **Render** mediante el blueprint [`render.yaml`](render.yaml), que levanta **tres servicios**:
 
-```bash
-cd delivery-multiagente/backend
-cp .env.example .env
-```
+| # | Servicio | Tipo | Descripción |
+|---|----------|------|-------------|
+| 1 | `el-trujillano-db` | PostgreSQL 16 gestionada | Base de datos relacional + `pgvector` para el RAG. `DATABASE_URL` se inyecta automáticamente al backend. |
+| 2 | `el-trujillano-api` | Web Service Python (FastAPI + uvicorn) | Backend: grafos LangGraph, API REST bajo `/api`, auth JWT. `rootDir: delivery-langgraph`. Health check en `/api/health`. |
+| 3 | `el-trujillano-frontend` | Static Site (React + Vite) | Frontend compilado (`npm run build` → `./dist`). Hace *rewrite* de `/api/*` y `/uploads/*` hacia el backend, con fallback SPA a `index.html`. |
 
-Editar `.env`:
+**Cómo se despliega (Blueprint):**
 
-```env
-DATABASE_URL="postgresql://postgres:TU_PASSWORD@localhost:5432/delivery_trujillano"
-JWT_SECRET="cambia_esto_por_un_secreto_seguro"
-PORT=3001
-NODE_ENV=development
-ANTHROPIC_API_KEY="sk-ant-..."
-CLAUDE_MODEL="claude-haiku-4-5-20251001"
-```
+1. En Render: **New → Blueprint**, apuntando a este repositorio (usa `render.yaml`).
+2. Render crea la base de datos y los dos web services automáticamente.
+3. Se completan en el dashboard las variables marcadas `sync: false`: `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY` y (opcional) `LANGSMITH_API_KEY`. `DATABASE_URL` y `JWT_SECRET` se inyectan/generan solos.
+4. El backend arranca con `scripts/start_render.sh`: instala dependencias, habilita `pgvector`, crea tablas, siembra catálogo/usuarios y levanta uvicorn.
+5. Se verifica en `GET /api/health`.
 
-### 2. Instalar dependencias y configurar la base de datos
+> **Notas del plan free (512 Mi):** la ingesta RAG no cabe junto a uvicorn (OOM), por eso `RUN_INGEST_ON_START=false` y la ingesta se corre aparte. `MALLOC_ARENA_MAX=2` reduce el RSS residente. Render entrega `DATABASE_URL` como `postgresql://…` y `config.py` la reescribe a `postgresql+psycopg://…` (psycopg3).
 
-```bash
-# Backend
-cd delivery-multiagente/backend
-npm install
-npm run prisma:migrate
-npm run prisma:seed
+### Acceso al sistema
 
-# Frontend
-cd ../frontend
-npm install
-```
-
-### 3. Ejecutar en desarrollo
-
-Abrir dos terminales:
-
-```bash
-# Terminal 1 — Backend
-cd delivery-multiagente/backend
-npm run dev
-# Corre en http://localhost:3001
-
-# Terminal 2 — Frontend
-cd delivery-multiagente/frontend
-npm run dev
-# Corre en http://localhost:5173
-```
-
----
-
-## Acceso al sistema
-
-| Rol | URL | Email | Contraseña |
-|-----|-----|-------|-----------|
-| Cliente | http://localhost:5173 | — | — |
-| Admin | http://localhost:5173/login | admin@eltrujillano.com | admin123 |
-| Cocina | http://localhost:5173/login | cocina@eltrujillano.com | cocina123 |
-| Repartidor | http://localhost:5173/login | repartidor@eltrujillano.com | repartidor123 |
-
----
-
-## Prueba rápida del flujo completo
-
-1. **Chatbot** → escribir cualquier mensaje → ingresar nombre → seleccionar productos del menú → confirmar pedido → subir comprobante de pago
-2. **Admin** (`/admin`) → pestaña Pagos → Aprobar comprobante (o el sistema lo valida automáticamente con Claude)
-3. **Cocina** (`/kitchen`) → ver pedido en cola → Marcar como Listo
-4. El sistema asigna repartidor automáticamente al marcar como listo
-5. **Repartidor** (`/driver`) → ver pedido asignado → Confirmar Entrega
-6. **Chatbot** → el sistema activa automáticamente la encuesta de satisfacción
-
----
-
-## Scripts disponibles
-
-### Backend
-
-| Script | Descripción |
-|--------|-------------|
-| `npm run dev` | Servidor con hot-reload (ts-node-dev) |
-| `npm run build` | Compilar TypeScript a `/dist` |
-| `npm start` | Ejecutar build de producción |
-| `npm run prisma:migrate` | Ejecutar migraciones |
-| `npm run prisma:seed` | Poblar datos iniciales |
-| `npm run setup` | migrate + seed en un paso |
-
-### Frontend
-
-| Script | Descripción |
-|--------|-------------|
-| `npm run dev` | Servidor Vite con HMR |
-| `npm run build` | Build de producción |
-| `npm run preview` | Preview del build |
+| Rol | Ruta | Email | Contraseña |
+|-----|------|-------|-----------|
+| Cliente | `/` | — | — |
+| Admin | `/login` | admin@eltrujillano.com | admin123 |
+| Cocina | `/login` | cocina@eltrujillano.com | cocina123 |
+| Repartidor | `/login` | repartidor@eltrujillano.com | repartidor123 |
 
 ---
 
 ## API — Resumen de endpoints
 
-Ver referencia completa en [`docs/api.md`](docs/api.md).
+Todos bajo `/api`. Ver referencia completa en [`docs/api.md`](delivery-langgraph/docs/api.md).
 
 ```
-POST  /api/auth/login
+POST  /api/auth/login                          (login JWT → {token, user})
 
-POST  /api/chat                               (multipart/form-data — OrchestratorAgent)
-GET   /api/chat/status/:sessionId
-POST  /api/chat/message                       (multipart/form-data — ChatbotAgent con Claude)
-GET   /api/chat/driver-check/:sessionId       (polling: detecta asignación de repartidor)
-GET   /api/chat/survey-check/:sessionId       (polling: detecta pedido entregado → encuesta)
-GET   /api/chat/notifications/:orderId
+POST  /api/chat/message                        (multipart — turno del chatbot, acepta attachment)
+GET   /api/chat/driver-check/{sid}             (polling: detecta asignación de repartidor)
+GET   /api/chat/survey-check/{sid}             (polling: detecta pedido entregado → encuesta)
 
-GET   /api/admin/orders?status=...            [ADMIN]
-POST  /api/admin/orders/:id/validate-payment  [ADMIN]
-POST  /api/admin/orders/:id/assign-driver     [ADMIN]
-GET   /api/admin/metrics                      [ADMIN]
-GET   /api/admin/pending-payments             [ADMIN]
-GET/POST/PATCH /api/admin/products            [ADMIN]
-GET/POST/PATCH /api/admin/drivers             [ADMIN]
+GET/POST/PATCH /api/admin/*                    [ADMIN] pedidos, métricas, pagos, productos, repartidores
+POST  /api/admin/orders/{id}/validate-payment  [ADMIN] HITL: aprobar/rechazar pago manualmente
 
-GET   /api/kitchen/orders                     [COCINA]
-POST  /api/kitchen/orders/:id/ready           [COCINA]
+GET/POST  /api/kitchen/*                        [ADMIN/COCINA] pedidos en cocina y marcar listo
+GET/POST  /api/driver/*                         [ADMIN/REPARTIDOR] entregas activas/listas/completadas
 
-GET   /api/driver/active                      [REPARTIDOR]
-POST  /api/driver/orders/:id/confirm-delivery [REPARTIDOR]
-
+POST  /api/reclamos                            (Deep Agent de reclamos)
 GET   /api/health
 ```
+
+---
+
+## Persistencia, HITL y observabilidad
+
+- **Checkpointing de LangGraph:** los grafos compilan con el checkpointer que decide `LANGGRAPH_CHECKPOINTER` (`memory` → `MemorySaver`; `postgres` → `PostgresSaver` sobre la misma PostgreSQL en producción). El `thread_id` es el `session_id`, así el carrito y los datos del cliente persisten entre turnos.
+- **Human-in-the-loop:** (a) aprobación/rechazo manual del pago desde el panel admin; (b) el Deep Agent escala a humano al superar `MAX_ITERACIONES`.
+- **LangSmith:** con `LANGSMITH_TRACING=true` y `LANGSMITH_API_KEY` se traza cada ejecución del grafo y llamada al LLM.
+- **Blindaje anti prompt-injection:** lo crítico ya es determinista (precios desde la BD, validación de pago y regla de cocina no confían en el LLM). Además `el_trujillano/prompt_guard.py` delimita el texto del cliente como CONTENIDO NO CONFIABLE. El dinero real siempre pasa por HITL.
 
 ---
 
@@ -446,10 +258,11 @@ GET   /api/health
 
 | Documento | Contenido |
 |-----------|-----------|
-| [`docs/arquitectura.md`](docs/arquitectura.md) | Diagrama de arquitectura completo, descripción de componentes y stack |
-| [`docs/flujo-pedido.md`](docs/flujo-pedido.md) | Diagrama de flujo TO-BE, diagrama de estados y tiempos estimados |
-| [`docs/api.md`](docs/api.md) | Referencia completa de la API REST |
-| [`docs/evidencias.md`](docs/evidencias.md) | Evidencia de implementación académica, reglas de negocio y criterios de éxito |
+| [`docs/arquitectura.md`](delivery-langgraph/docs/arquitectura.md) | Diagrama de arquitectura, componentes y stack |
+| [`docs/flujo-pedido.md`](delivery-langgraph/docs/flujo-pedido.md) | Diagrama de flujo TO-BE, estados y tiempos |
+| [`docs/api.md`](delivery-langgraph/docs/api.md) | Referencia completa de la API REST |
+| [`docs/agentes.md`](delivery-langgraph/docs/agentes.md) | Descripción de agentes y nodos |
+| [`docs/evidencias.md`](delivery-langgraph/docs/evidencias.md) | Evidencia académica, reglas de negocio y criterios de éxito |
 
 ---
 
@@ -467,4 +280,4 @@ GET   /api/health
 
 ## Contexto académico
 
-Proyecto desarrollado para evidenciar el diseño e implementación de una arquitectura multiagente aplicada a un caso real. El restaurante **El Trujillano**, ubicado en Trujillo, Perú, operaba con procesos manuales en WhatsApp. Este sistema automatiza el flujo completo con agentes especializados, manteniendo la separación de responsabilidades y una máquina de estados robusta.
+Proyecto desarrollado para evidenciar el diseño e implementación de una arquitectura multiagente aplicada a un caso real. El restaurante **El Trujillano**, ubicado en Trujillo, Perú, operaba con procesos manuales en WhatsApp. Este sistema automatiza el flujo completo con LangGraph y la API de Claude, distinguiendo con rigor los componentes que razonan con un LLM de los nodos deterministas, y manteniendo una máquina de estados robusta.
